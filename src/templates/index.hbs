@@ -1,0 +1,182 @@
+<template>
+  <div>
+    <t-card class="list-card-container" :bordered="false">
+      <t-row justify="space-between">
+        <div class="left-operation-container">
+          <t-button @click="handleAdd">新增</t-button>
+          <import-component :upload-props="{
+              action: {{#raw}}`${API_PREFIX}/readExcel`{{/raw}},
+            }" style="margin-left: 10px" @fetch-data="fetchData"></import-component>
+          <t-button theme="primary" style="margin-left: 10px"
+            @click="exportFile($route.meta.title as string)">导出</t-button>
+          <t-button theme="primary" @click="downloadTemplate($route.meta.title as string)">下载模板</t-button>
+        </div>
+        <div class="search-input" style="display: flex; justify-content: right">
+          <t-input {{#raw}}v-model.trim="searchValue" {{/raw}} placeholder="请输入关键字" clearable
+            {{#raw}}@enter="handleSearch" {{/raw}} {{#raw}}@clear="handleClearSearch" {{/raw}}>
+            <template #suffix-icon>
+              <search-icon size="16px" />
+            </template>
+          </t-input>
+          <t-button style="margin-left: 10px" @click="resetPageState"> 刷新 </t-button>
+        </div>
+      </t-row>
+      <!--       斑马纹stripe 边框bordered-->
+      <t-table {{#raw}}:data="data" {{/raw}} {{#raw}}:columns="COLUMNS" {{/raw}} {{#raw}}:row-key="rowKey" {{/raw}}
+        vertical-align="middle" {{#raw}}:stripe="true" {{/raw}} {{#raw}}:bordered="true" {{/raw}}
+        {{#raw}}:filter-value="filterValue" {{/raw}} {{#raw}}:hover="true" {{/raw}} {{#raw}}:pagination="pagination"
+        {{/raw}} {{#raw}}:selected-row-keys="selectedRowKeys" {{/raw}} {{#raw}}:loading="dataLoading" {{/raw}}
+        {{#raw}}@page-change="handlePageChange" {{/raw}} {{#raw}}@select-change="handleSelectChange" {{/raw}}
+        {{#raw}}@filter-change="handleFilterChange" {{/raw}}>
+        <template #filterRow>
+          <span style="margin-right: 30px">搜索"
+            <span v-for="(item, index) in searchCriteria" :key="index">\{{`${index}：${item}；`}}</span>
+            "，找到
+            \{{pagination.total}}
+            条结果</span>
+
+          <t-link hover="color" theme="primary" @click="resetFilter">重置筛选项</t-link>
+        </template>
+
+        <template #op="{ row }">
+          <t-space>
+            <t-link theme="primary" class="t-button-link" @click="handleEdit(row)">编辑</t-link>
+            <t-link theme="primary" class="t-button-link" @click="handleDetail(row)">详情</t-link>
+            <t-popconfirm content="确认删除吗" theme="danger" :confirm-btn="{ theme: 'danger' }"
+              @confirm="handleDelete(row)">
+              <t-link theme="primary" class="t-button-link">删除</t-link>
+            </t-popconfirm>
+          </t-space>
+        </template>
+      </t-table>
+    </t-card>
+
+    <t-drawer v-model:visible="visible" :header="drawerTitle" destroy-on-close :close-on-overlay-click="false"
+      :on-confirm="saveData" size="large" @close="closeDrawer">
+      <dynamic-form v-model="formData" :form-items="formItems" :form-attribute="formAttribute"
+        @get-form-ref="(formDom) => { formRef = formDom; }" />
+      <template #footer>
+        <t-button v-if="drawerTitle !== '详情'" :loading="saveLoading" @click="saveData">确定</t-button>
+        <t-button variant="outline" @click="closeDrawer"> 取消 </t-button>
+      </template>
+    </t-drawer>
+  </div>
+</template>
+
+<script lang="ts">
+  /**
+   * 列表页面基础组件
+   * @description 提供完整的CRUD操作、分页、筛选、搜索等功能
+   * @author 代码生成器
+   * @version 2.0.0
+   */
+  export default {
+    name: 'ListBase',
+  };
+</script>
+
+<script setup lang="ts">
+  import { SearchIcon } from 'tdesign-icons-vue-next';
+  import { onMounted } from 'vue';
+
+  import importComponent from '@/components/import/index';
+  import { DynamicForm } from '@/libs/components/dynamicForm';
+
+  import { API_PREFIX } from './api';
+  import { COLUMNS } from './constants';
+  import { useListState } from './useListState';
+
+  /**
+   * 使用统一的状态管理hook
+   * @description 所有页面状态都通过这个hook进行管理
+   */
+  const {
+    // 数据状态
+    data,
+    dataLoading,
+    saveLoading,
+
+    // 搜索和筛选
+    searchValue,
+    filterValue,
+    searchCriteria,
+
+    // 分页
+    pagination,
+
+    // 表格选择
+    selectedRowKeys,
+    rowKey,
+
+    // 抽屉
+    visible,
+    drawerTitle,
+
+    // 表单
+    formRef,
+    formAttribute,
+    formData,
+    formItems,
+
+    // 方法
+    fetchData,
+    exportFile,
+    downloadTemplate,
+    handlePageChange,
+    handleSelectChange,
+    handleFilterChange,
+    handleSearch,
+    handleClearSearch,
+    resetFilter,
+    resetPageState,
+    handleAdd,
+    handleEdit,
+    handleDetail,
+    handleDelete,
+    saveData,
+    closeDrawer,
+  } = useListState();
+
+  /**
+   * 组件挂载时获取数据
+   */
+  onMounted(() => {
+    fetchData();
+  });
+</script>
+
+<style lang="less" scoped>
+  .payment-col {
+    display: flex;
+
+    .trend-container {
+      display: flex;
+      align-items: center;
+      margin-left: var(--td-comp-margin-s);
+    }
+  }
+
+  .list-card-container {
+    padding: var(--td-comp-paddingTB-xxl) var(--td-comp-paddingLR-xxl);
+
+    :deep(.t-card__body) {
+      padding: 0;
+    }
+  }
+
+  .left-operation-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--td-comp-margin-xxl);
+
+    .selected-count {
+      display: inline-block;
+      margin-left: var(--td-comp-margin-l);
+      color: var(--td-text-color-secondary);
+    }
+  }
+
+  .search-input {
+    width: 360px;
+  }
+</style>

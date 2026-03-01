@@ -6,9 +6,16 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/html": "^1.4.0",
+    "@elysiajs/static": "^1.4.7",
+    "@kitajs/html": "^4.2.13",
+    "elysia": "^1.4.26",
+    "handlebars": "^4.7.8",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
+    "@kitajs/ts-html-plugin": "^4.1.4",
     "bun-types": "latest"
   },
   "module": "src/index.js"

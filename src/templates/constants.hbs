@@ -1,0 +1,57 @@
+import { PrimaryTableCol, TableRowData } from 'tdesign-vue-next';
+
+/**
+* 表格列配置
+* @description 定义表格的列结构和显示配置
+*/
+export const COLUMNS: PrimaryTableCol<TableRowData>[] = [
+  {
+  colKey: 'serial-number',
+  width: 80,
+  title: '序号',
+  align: 'center',
+  fixed: 'left'
+  },
+  {{#each fieldsList}}
+  {
+  colKey: '{{this.name}}',
+  title: '{{this.comment}}',
+  width: '250',
+  align: 'center',
+  ellipsis: true,
+  },
+  {{/each}}
+  {
+  align: 'center',
+  fixed: 'right',
+  width: 200,
+  colKey: 'op',
+  title: '操作',
+  },
+  ];
+
+  /**
+  * 默认分页配置
+  */
+  export const DEFAULT_PAGINATION = {
+  pageSize: 10,
+  total: 0,
+  current: 1,
+  pageSizeOptions: [5, 10, 15, 20, 30, 50],
+  };
+
+  /**
+  * 默认表单属性配置
+  */
+  export const DEFAULT_FORM_ATTRIBUTE = {
+  disabled: false,
+  };
+
+  /**
+  * 默认表单数据
+  */
+  export const DEFAULT_FORM_DATA = {
+  {{#each fieldsList}}
+  {{this.name}}: '',
+  {{/each}}
+  };

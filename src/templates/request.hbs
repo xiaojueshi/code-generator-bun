@@ -1,0 +1,99 @@
+import { toFile } from '@/libs/utils/dataTreating';
+
+import { delApi, exportApi, getApi, getTemplateApi, postApi, putApi } from './api';
+import { DataType, ListQueryParams, ListResponse } from './type';
+
+/**
+* 数据服务类
+* @description 提供统一的数据操作接口
+*/
+export class DataService {
+/**
+* 获取列表数据
+* @param params 查询参数
+* @returns 返回列表数据
+*/
+static async fetchList(params: ListQueryParams): Promise<ListResponse<DataType>> {
+  try {
+  const response = await getApi(params);
+  return response;
+  } catch (error) {
+  console.error('获取列表数据失败:', error);
+  throw error;
+  }
+  }
+
+  /**
+  * 新增数据
+  * @param data 要新增的数据
+  * @returns 返回新增结果
+  */
+  static async createData(data: DataType): Promise<any> {
+    try {
+    const response = await postApi(data);
+    return response;
+    } catch (error) {
+    console.error('新增数据失败:', error);
+    throw error;
+    }
+    }
+
+    /**
+    * 更新数据
+    * @param data 要更新的数据
+    * @returns 返回更新结果
+    */
+    static async updateData(data: DataType): Promise<any> {
+      try {
+      const response = await putApi(data);
+      return response;
+      } catch (error) {
+      console.error('更新数据失败:', error);
+      throw error;
+      }
+      }
+
+      /**
+      * 删除数据
+      * @param data 要删除的数据
+      * @returns 返回删除结果
+      */
+      static async deleteData(data: DataType): Promise<any> {
+        try {
+        const response = await delApi(data);
+        return response;
+        } catch (error) {
+        console.error('删除数据失败:', error);
+        throw error;
+        }
+        }
+
+        /**
+        * 导出文件
+        * @param params 查询参数
+        * @param fileName 文件名
+        */
+        static async exportFile(params: ListQueryParams, fileName: string): Promise<void> {
+          try {
+          const result = await exportApi(params);
+          toFile(result, `${fileName}.xlsx`);
+          } catch (error) {
+          console.error('导出文件失败:', error);
+          throw error;
+          }
+          }
+
+          /**
+          * 下载导入模板
+          * @param fileName 文件名
+          */
+          static async downloadTemplate(fileName: string): Promise<void> {
+            try {
+            const result = await getTemplateApi();
+            toFile(result, `${fileName}模版.xlsx`);
+            } catch (error) {
+            console.error('下载模板失败:', error);
+            throw error;
+            }
+            }
+            }

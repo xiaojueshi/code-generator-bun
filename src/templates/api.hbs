@@ -1,0 +1,98 @@
+import { request } from '@/utils/request';
+
+import { DataType, ListQueryParams, ListResponse } from './type';
+
+/**
+* API前缀
+*/
+export const API_PREFIX = '/admin/property';
+
+/**
+* API端点配置
+*/
+const Api = {
+get: `${API_PREFIX}/list`,
+post: `${API_PREFIX}/insert`,
+put: `${API_PREFIX}/update`,
+del: `${API_PREFIX}/delete`,
+export: `${API_PREFIX}/getExcel`,
+template: `${API_PREFIX}/getTemplate`,
+};
+
+/**
+* 获取列表数据
+* @param data 查询参数
+* @returns 返回列表数据
+*/
+export const getApi = (data: ListQueryParams): Promise<ListResponse<DataType>> => {
+  return request.get({
+  url: Api.get,
+  params: data,
+  });
+  };
+
+  /**
+  * 新增数据
+  * @param data 数据
+  * @returns 返回新增结果
+  */
+  export const postApi = (data: DataType) => {
+  return request.post({
+  url: Api.post,
+  data,
+  });
+  };
+
+  /**
+  * 更新数据
+  * @param data 数据
+  * @returns 返回更新结果
+  */
+  export const putApi = (data: DataType) => {
+  return request.post({
+  url: Api.put,
+  data,
+  });
+  };
+
+  /**
+  * 删除数据
+  * @param data 数据
+  * @returns 返回删除结果
+  */
+  export const delApi = (data: DataType) => {
+  return request.post({
+  url: Api.del,
+  data,
+  });
+  };
+
+  /**
+  * 导出文件
+  * @param data 查询参数
+  * @returns 返回文件流
+  */
+  export const exportApi = (data: ListQueryParams) => {
+  return request.post(
+  {
+  url: Api.export,
+  responseType: 'blob',
+  params: data,
+  },
+  { isTransformResponse: false },
+  );
+  };
+
+  /**
+  * 获取导入模板
+  * @returns 返回模板文件流
+  */
+  export const getTemplateApi = () => {
+  return request.post(
+  {
+  url: Api.template,
+  responseType: 'blob',
+  },
+  { isTransformResponse: false },
+  );
+  };

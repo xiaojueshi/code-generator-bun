@@ -1,0 +1,340 @@
+import { MessagePlugin } from 'tdesign-vue-next';
+import { computed, ref } from 'vue';
+
+import { FormRowType, TDFormType } from '@/libs/components/dynamicForm';
+import { useResettableRef } from '@/libs/hooks';
+
+import { DEFAULT_FORM_ATTRIBUTE, DEFAULT_FORM_DATA, DEFAULT_PAGINATION } from './constants';
+import { DataService } from './request';
+import { DataType } from './type';
+
+/**
+* 数据状态管理hook
+* @description 管理列表数据和加载状态
+*/
+export const useDataState = () => {
+const data = ref<DataType[]>([]);
+  const dataLoading = ref(false);
+  const saveLoading = ref(false);
+
+  return {
+  data,
+  dataLoading,
+  saveLoading,
+  };
+  };
+
+  /**
+  * 搜索和筛选状态管理hook
+  * @description 管理搜索和筛选条件
+  */
+  export const useFilterState = () => {
+  const searchValue = ref('');
+  const filterValue = ref({});
+  const searchCriteria = ref({});
+  const pagination = ref({ ...DEFAULT_PAGINATION });
+
+  const resetSearch = () => {
+  searchValue.value = '';
+  searchCriteria.value = {};
+  pagination.value.current = 1;
+  };
+
+  const resetFilter = () => {
+  filterValue.value = {};
+  pagination.value.current = 1;
+  };
+
+  const resetPagination = () => {
+  pagination.value = { ...DEFAULT_PAGINATION };
+  };
+
+  return {
+  searchValue,
+  filterValue,
+  searchCriteria,
+  pagination,
+  resetSearch,
+  resetFilter,
+  resetPagination,
+  };
+  };
+
+  /**
+  * 表格状态管理hook
+  * @description 管理表格选择和操作
+  */
+  export const useTableState = () => {
+  const selectedRowKeys = ref<(string | number)[]>([]);
+    const rowKey = 'id';
+
+    const clearSelection = () => {
+    selectedRowKeys.value = [];
+    };
+
+    return {
+    selectedRowKeys,
+    rowKey,
+    clearSelection,
+    };
+    };
+
+    /**
+    * 抽屉状态管理hook
+    * @description 管理抽屉和表单状态
+    */
+    export const useDrawerState = () => {
+    const visible = ref(false);
+    const drawerTitle = ref('');
+    const formRef = ref(null);
+    const formAttribute = ref<TDFormType>({ ...DEFAULT_FORM_ATTRIBUTE });
+      const [formData, resetFormData] = useResettableRef({ ...DEFAULT_FORM_DATA });
+
+      const formItems = computed<FormRowType[]>(() => [
+        {{#each fieldsList}}
+        {
+        children: [
+        {
+        name: '{{this.name}}',
+        component: 'Input',
+        formItemAttribute: {
+        label: '{{this.comment}}',
+        },
+        },
+        ],
+        },
+        {{/each}}
+        ]);
+
+        const openDrawer = (title: string, data?: DataType) => {
+        visible.value = true;
+        drawerTitle.value = title;
+        formAttribute.value.disabled = title === '详情';
+
+        if (data) {
+        formData.value = { ...formData.value, ...data };
+        } else {
+        resetFormData();
+        }
+        };
+
+        const closeDrawer = () => {
+        visible.value = false;
+        drawerTitle.value = '';
+        resetFormData();
+        };
+
+        return {
+        visible,
+        drawerTitle,
+        formRef,
+        formAttribute,
+        formData,
+        formItems,
+        resetFormData,
+        openDrawer,
+        closeDrawer,
+        };
+        };
+
+        /**
+        * 统一的列表页面状态管理hook
+        * @description 组合各种状态管理，提供完整的页面逻辑
+        */
+        export const useListState = () => {
+        const dataState = useDataState();
+        const filterState = useFilterState();
+        const tableState = useTableState();
+        const drawerState = useDrawerState();
+
+        /**
+        * 获取数据
+        */
+        const fetchData = async (): Promise<void> => {
+          dataState.dataLoading.value = true;
+          try {
+          const params = {
+          current: filterState.pagination.value.current,
+          pageSize: filterState.pagination.value.pageSize,
+          search: filterState.searchValue.value,
+          ...filterState.filterValue.value,
+          };
+          const response = await DataService.fetchList(params);
+          dataState.data.value = response.list;
+          filterState.pagination.value.total = response.total;
+          } catch (error) {
+          console.error('获取数据失败:', error);
+          } finally {
+          dataState.dataLoading.value = false;
+          }
+          };
+
+          /**
+          * 保存数据（新增/编辑）
+          */
+          const saveData = async (): Promise<void> => {
+            const result = await drawerState.formRef.value?.validate();
+            if (result !== true) return;
+
+            dataState.saveLoading.value = true;
+            try {
+            const data = JSON.parse(JSON.stringify(drawerState.formData.value));
+
+            if (drawerState.drawerTitle.value === '新增') {
+            await DataService.createData(data);
+            MessagePlugin.success('新增成功');
+            filterState.pagination.value.current = 1;
+            } else {
+            await DataService.updateData(data);
+            MessagePlugin.success('更新成功');
+            }
+
+            await fetchData();
+            drawerState.closeDrawer();
+            } catch (error) {
+            console.error('保存失败:', error);
+            } finally {
+            dataState.saveLoading.value = false;
+            }
+            };
+
+            /**
+            * 删除数据
+            */
+            const deleteData = async (data: DataType): Promise<void> => {
+              dataState.saveLoading.value = true;
+              try {
+              await DataService.deleteData(data);
+              MessagePlugin.success('删除成功');
+              filterState.pagination.value.current = 1;
+              await fetchData();
+              } catch (error) {
+              console.error('删除失败:', error);
+              } finally {
+              dataState.saveLoading.value = false;
+              }
+              };
+
+              /**
+              * 导出文件
+              */
+              const exportFile = async (fileName: string): Promise<void> => {
+                const params = {
+                current: filterState.pagination.value.current,
+                pageSize: filterState.pagination.value.pageSize,
+                search: filterState.searchValue.value,
+                ...filterState.filterValue.value,
+                };
+                await DataService.exportFile(params, fileName);
+                };
+
+                /**
+                * 下载模板
+                */
+                const downloadTemplate = async (fileName: string): Promise<void> => {
+                  await DataService.downloadTemplate(fileName);
+                  };
+
+                  // 事件处理函数
+                  const handlePageChange = (curr: { pageSize: number; current: number }) => {
+                  filterState.pagination.value = { ...filterState.pagination.value, ...curr };
+                  fetchData();
+                  };
+
+                  const handleSelectChange = (val: (string | number)[]) => {
+                  tableState.selectedRowKeys.value = val;
+                  };
+
+                  /**
+                  * 构建搜索条件对象
+                  * @description 根据搜索值和筛选值构建条件对象
+                  */
+                  const buildSearchCriteria = (filters?: Record<string, any>): Record<string, any> => {
+                      const criteria: Record<string, any> = {};
+
+                        // 添加搜索关键字
+                        if (filterState.searchValue.value) {
+                        criteria['关键字'] = filterState.searchValue.value;
+                        }
+
+                        // 添加筛选条件
+                        const filterValues: Record<string, any> = filters || filterState.filterValue.value;
+                          Object.keys(filterValues).forEach((key) => {
+                          if (filterValues[key]) {
+                          criteria[key] = filterValues[key];
+                          }
+                          });
+
+                          return criteria;
+                          };
+
+                          const handleFilterChange = (filters: Record<string, any>) => {
+                            filterState.filterValue.value = filters;
+                            filterState.searchCriteria.value = buildSearchCriteria(filters);
+                            filterState.pagination.value.current = 1;
+                            fetchData();
+                            };
+
+                            const handleSearch = () => {
+                            filterState.searchCriteria.value = buildSearchCriteria();
+                            filterState.pagination.value.current = 1;
+                            fetchData();
+                            };
+
+                            const handleClearSearch = () => {
+                            filterState.searchValue.value = '';
+                            filterState.searchCriteria.value = buildSearchCriteria();
+                            filterState.pagination.value.current = 1;
+                            fetchData();
+                            };
+
+                            const handleAdd = () => drawerState.openDrawer('新增');
+                            const handleEdit = (row: DataType) => drawerState.openDrawer('编辑', row);
+                            const handleDetail = (row: DataType) => drawerState.openDrawer('详情', row);
+                            const handleDelete = (row: DataType) => deleteData(row);
+
+                            const resetPageState = () => {
+                            filterState.resetSearch();
+                            filterState.resetFilter();
+                            filterState.resetPagination();
+                            tableState.clearSelection();
+                            drawerState.closeDrawer();
+                            filterState.searchCriteria.value = {};
+                            fetchData();
+                            };
+
+                            /**
+                            * 重置筛选项并刷新数据
+                            */
+                            const resetFilter = () => {
+                            filterState.resetFilter();
+                            filterState.searchCriteria.value = {};
+                            handleClearSearch();
+                            };
+
+                            return {
+                            // 状态
+                            ...dataState,
+                            ...filterState,
+                            ...tableState,
+                            ...drawerState,
+
+                            // 方法
+                            fetchData,
+                            saveData,
+                            deleteData,
+                            exportFile,
+                            downloadTemplate,
+                            handlePageChange,
+                            handleSelectChange,
+                            handleFilterChange,
+                            handleSearch,
+                            handleClearSearch,
+                            handleAdd,
+                            handleEdit,
+                            handleDetail,
+                            handleDelete,
+                            resetPageState,
+                            resetFilter,
+                            };
+                            };

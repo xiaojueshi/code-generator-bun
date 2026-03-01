@@ -1,0 +1,337 @@
+import { SQL } from "bun";
+import type { DatabaseConfig, TableColumn, TableInfo } from "../types";
+import { localDatabase } from "./local";
+import { cleanString } from "../utils/stringUtils";
+
+/**
+ * 数据库连接器
+ * 使用 Bun 原生 SQL 模块统一管理 MySQL/PostgreSQL/SQLite 连接
+ * 关键设计：短连接模式，每次操作创建连接，操作完成后立即关闭
+ */
+class DatabaseConnector {
+  private configs: Map<string, DatabaseConfig> = new Map();
+
+  /** 创建临时数据库连接 */
+  private createConnection(config: DatabaseConfig): InstanceType<typeof SQL> {
+    switch (config.type) {
+      case "mysql":
+        return new SQL({
+          adapter: "mysql",
+          hostname: config.host || "localhost",
+          port: config.port || 3306,
+          database: config.database,
+          username: config.user || "root",
+          password: config.password || "",
+          max: 1,
+          idleTimeout: 5,
+        });
+
+      case "postgres":
+        return new SQL({
+          hostname: config.host || "localhost",
+          port: config.port || 5432,
+          database: config.database,
+          username: config.user || "postgres",
+          password: config.password || "",
+          max: 1,
+          idleTimeout: 5,
+        });
+
+      case "sqlite":
+        if (!config.filename) {
+          throw new Error("SQLite 数据库需要指定文件路径");
+        }
+        return new SQL({
+          adapter: "sqlite",
+          filename: config.filename,
+        });
+
+      default:
+        throw new Error(`不支持的数据库类型: ${config.type}`);
+    }
+  }
+
+  /** 关闭连接 */
+  private async closeConnection(conn: InstanceType<typeof SQL>): Promise<void> {
+    try {
+      await conn.close();
+    } catch (error) {
+      console.warn("关闭数据库连接时出错:", error);
+    }
+  }
+
+  /** 验证并保存数据库配置 */
+  async connect(config: DatabaseConfig): Promise<boolean> {
+    const conn = this.createConnection(config);
+    try {
+      // 验证连接是否可用
+      if (config.type === "sqlite") {
+        await conn`SELECT 1`;
+      } else if (config.type === "mysql") {
+        await conn`SELECT 1`;
+      } else {
+        await conn`SELECT 1`;
+      }
+
+      // 保存配置
+      await localDatabase.saveConnection(config);
+      this.configs.set(config.id, config);
+      return true;
+    } catch (error: any) {
+      console.error(`连接数据库失败: ${error.message}`);
+      throw error;
+    } finally {
+      await this.closeConnection(conn);
+    }
+  }
+
+  /** 删除数据库配置 */
+  async disconnect(id: string): Promise<boolean> {
+    const config = this.configs.get(id);
+    if (!config) return false;
+
+    await localDatabase.deleteConnection(id);
+    this.configs.delete(id);
+    return true;
+  }
+
+  /** 获取表列表 */
+  async listTables(id: string): Promise<string[]> {
+    const config = this.configs.get(id);
+    if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    const conn = this.createConnection(config);
+    try {
+      switch (config.type) {
+        case "mysql": {
+          const rows = await conn`
+            SELECT table_name as TABLE_NAME
+            FROM information_schema.tables
+            WHERE table_schema = ${config.database}
+            ORDER BY table_name
+          `;
+          return rows.map((row: any) => row.TABLE_NAME);
+        }
+
+        case "postgres": {
+          const rows = await conn`
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+          `;
+          return rows.map((row: any) => row.table_name);
+        }
+
+        case "sqlite": {
+          const rows = await conn`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+          `;
+          return rows.map((row: any) => row.name);
+        }
+
+        default:
+          throw new Error(`不支持的数据库类型: ${config.type}`);
+      }
+    } finally {
+      await this.closeConnection(conn);
+    }
+  }
+
+  /** 获取表结构信息 */
+  async getTableInfo(id: string, tableName: string): Promise<TableInfo> {
+    const config = this.configs.get(id);
+    if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    const conn = this.createConnection(config);
+    try {
+      let columns: TableColumn[] = [];
+      let tableComment = "";
+
+      switch (config.type) {
+        case "mysql": {
+          // 获取表注释
+          const tableMeta = await conn`
+            SELECT table_comment
+            FROM information_schema.tables
+            WHERE table_schema = ${config.database} AND table_name = ${tableName}
+          `;
+          if (tableMeta.length > 0) {
+            tableComment = cleanString((tableMeta[0] as any).table_comment || "");
+          }
+
+          // 获取字段信息
+          const rows = await conn`
+            SELECT
+              column_name as COLUMN_NAME,
+              data_type as DATA_TYPE,
+              column_comment as COLUMN_COMMENT,
+              is_nullable as IS_NULLABLE,
+              column_default as COLUMN_DEFAULT
+            FROM information_schema.columns
+            WHERE table_schema = ${config.database} AND table_name = ${tableName}
+            ORDER BY ordinal_position
+          `;
+
+          columns = rows.map((row: any, index: number) => ({
+            name: row.COLUMN_NAME,
+            originalName: row.COLUMN_NAME,
+            dataType: row.DATA_TYPE,
+            comment: cleanString(row.COLUMN_COMMENT || row.COLUMN_NAME),
+            isNullable: row.IS_NULLABLE === "YES",
+            defaultValue: row.COLUMN_DEFAULT,
+            isSelected: true,
+            order: index,
+          }));
+          break;
+        }
+
+        case "postgres": {
+          // 获取表注释
+          const commentResult = await conn`
+            SELECT obj_description(to_regclass(${tableName}), 'pg_class') AS comment
+          `;
+          if (commentResult.length > 0) {
+            tableComment = cleanString((commentResult[0] as any).comment || "");
+          }
+
+          // 获取字段信息
+          const rows = await conn`
+            SELECT
+              a.attname as column_name,
+              t.typname as data_type,
+              pg_catalog.col_description(a.attrelid, a.attnum) as column_comment,
+              a.attnotnull as is_not_null,
+              pg_get_expr(d.adbin, d.adrelid) as column_default
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+            JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
+            JOIN pg_catalog.pg_type t ON a.atttypid = t.oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+            WHERE c.relname = ${tableName}
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            ORDER BY a.attnum
+          `;
+
+          columns = rows.map((row: any, index: number) => ({
+            name: row.column_name,
+            originalName: row.column_name,
+            dataType: row.data_type,
+            comment: cleanString(row.column_comment || row.column_name),
+            isNullable: !row.is_not_null,
+            defaultValue: row.column_default,
+            isSelected: true,
+            order: index,
+          }));
+          break;
+        }
+
+        case "sqlite": {
+          tableComment = cleanString(tableName);
+
+          const rows = await conn.unsafe(`PRAGMA table_info(${tableName})`);
+
+          columns = rows.map((row: any, index: number) => ({
+            name: row.name,
+            originalName: row.name,
+            dataType: row.type,
+            comment: cleanString(row.name), // SQLite 不支持列注释
+            isNullable: row.notnull === 0,
+            defaultValue: row.dflt_value,
+            isSelected: true,
+            order: index,
+          }));
+          break;
+        }
+
+        default:
+          throw new Error(`不支持的数据库类型: ${config.type}`);
+      }
+
+      return { name: tableName, comment: tableComment, columns };
+    } finally {
+      await this.closeConnection(conn);
+    }
+  }
+
+  /** 获取已连接的数据库列表 */
+  getConnectedDatabases(): DatabaseConfig[] {
+    return Array.from(this.configs.values());
+  }
+
+  /** 获取数据库配置 */
+  getDatabaseConfig(id: string): DatabaseConfig | undefined {
+    return this.configs.get(id);
+  }
+
+  /** 获取数据源下可访问的数据库列表 */
+  async listDatabases(id: string): Promise<string[]> {
+    const config = this.configs.get(id);
+    if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    const conn = this.createConnection(config);
+    try {
+      switch (config.type) {
+        case "mysql": {
+          // 检查用户权限
+          const grantRows = await conn`SHOW GRANTS FOR CURRENT_USER()`;
+          const grantsStr = JSON.stringify(grantRows);
+          const isAdmin = grantsStr.includes("ALL PRIVILEGES") || config.user === "root";
+
+          if (isAdmin) {
+            const rows = await conn`SHOW DATABASES`;
+            return rows
+              .map((row: any) => row.Database)
+              .filter((name: string) =>
+                !["information_schema", "mysql", "performance_schema", "sys"].includes(name)
+              );
+          }
+          return [config.database];
+        }
+
+        case "postgres": {
+          const result = await conn`
+            SELECT rolsuper FROM pg_roles WHERE rolname = current_user
+          `;
+          const isSuperUser = result.length > 0 && (result[0] as any).rolsuper;
+
+          if (isSuperUser) {
+            const dbResult = await conn`
+              SELECT datname FROM pg_database
+              WHERE datistemplate = false AND datname != 'postgres'
+              ORDER BY datname
+            `;
+            return dbResult.map((row: any) => row.datname);
+          }
+          return [config.database];
+        }
+
+        case "sqlite":
+          return [config.database];
+
+        default:
+          throw new Error(`不支持的数据库类型: ${config.type}`);
+      }
+    } finally {
+      await this.closeConnection(conn);
+    }
+  }
+
+  /** 加载已保存的连接配置 */
+  async loadSavedConnections(): Promise<void> {
+    try {
+      const connections = await localDatabase.getAllConnections();
+      for (const config of connections) {
+        this.configs.set(config.id, config);
+      }
+      console.log(`已加载 ${connections.length} 个保存的数据源配置`);
+    } catch (error) {
+      console.error("加载保存的连接失败:", error);
+    }
+  }
+}
+
+export const databaseConnector = new DatabaseConnector();

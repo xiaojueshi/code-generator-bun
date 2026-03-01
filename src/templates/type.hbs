@@ -1,0 +1,64 @@
+/**
+* 数据类型定义
+* @description 定义列表页面中使用的数据类型
+*/
+export interface DataType {
+{{#each fieldsList}}
+/**
+* {{this.comment}}
+*/
+{{this.name}}: string;
+{{/each}}
+}
+
+/**
+* 列表查询参数类型
+* @description 用于列表查询的参数类型定义
+*/
+export interface ListQueryParams {
+/**
+* 当前页码
+*/
+current: number;
+
+/**
+* 每页条数
+*/
+pageSize: number;
+
+/**
+* 搜索关键字
+*/
+search?: string;
+
+/**
+* 筛选条件
+*/
+[key: string]: any;
+}
+
+/**
+* 列表响应数据类型
+* @description 用于列表查询响应的数据类型定义
+*/
+export interface ListResponse<T=DataType> {
+  /**
+  * 数据列表
+  */
+  list: T[];
+
+  /**
+  * 总记录数
+  */
+  total: number;
+
+  /**
+  * 当前页码
+  */
+  current: number;
+
+  /**
+  * 每页条数
+  */
+  pageSize: number;
+  }
