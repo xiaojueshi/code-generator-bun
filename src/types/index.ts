@@ -1,5 +1,5 @@
 /** 支持的数据库类型 */
-export type DatabaseType = "mysql" | "postgres" | "sqlite";
+export type DatabaseType = "mysql" | "postgres" | "sqlite" | "dmdb";
 
 /** 数据源连接配置 */
 export interface DatabaseConfig {

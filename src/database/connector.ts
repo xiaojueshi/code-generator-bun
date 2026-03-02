@@ -3,13 +3,43 @@ import type { DatabaseConfig, TableColumn, TableInfo } from "../types";
 import { localDatabase } from "./local";
 import { cleanString } from "../utils/stringUtils";
 
+/** 超时包装：为任意 Promise 添加超时限制 */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} 超时（${ms / 1000}秒）`));
+    }, ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+/** 达梦操作默认超时时间（毫秒） */
+const DMDB_CONNECT_TIMEOUT = 10_000;
+const DMDB_QUERY_TIMEOUT = 30_000;
+
 /**
  * 数据库连接器
  * 使用 Bun 原生 SQL 模块统一管理 MySQL/PostgreSQL/SQLite 连接
+ * 考虑到 DMDB 是独立的 Node.js 驱动，我们将特殊处理其连接池/生命周期
  * 关键设计：短连接模式，每次操作创建连接，操作完成后立即关闭
  */
 class DatabaseConnector {
   private configs: Map<string, DatabaseConfig> = new Map();
+
+  /** 创建达梦专属的临时连接（带超时） */
+  private async getDmdbConnection(config: DatabaseConfig): Promise<any> {
+    const dmdb = require("dmdb");
+    const connPromise = dmdb.getConnection({
+      user: config.user || config.database,
+      password: config.password,
+      connectString: `${config.host || "localhost"}:${config.port || 5236}`,
+      loginEncrypt: false,
+    });
+    return withTimeout(connPromise, DMDB_CONNECT_TIMEOUT, "达梦数据库连接");
+  }
 
   /** 创建临时数据库连接 */
   private createConnection(config: DatabaseConfig): InstanceType<typeof SQL> {
@@ -62,9 +92,28 @@ class DatabaseConnector {
 
   /** 验证并保存数据库配置 */
   async connect(config: DatabaseConfig): Promise<boolean> {
+    if (config.type === "dmdb") {
+      let dmdbConn;
+      try {
+        dmdbConn = await this.getDmdbConnection(config);
+        await withTimeout(dmdbConn.execute("SELECT 1 FROM DUAL"), DMDB_QUERY_TIMEOUT, "达梦连接验证查询");
+
+        await localDatabase.saveConnection(config);
+        this.configs.set(config.id, config);
+        return true;
+      } catch (error: any) {
+        console.error(`连接达梦数据库失败: ${error.message}`);
+        throw error;
+      } finally {
+        if (dmdbConn) {
+          try { await dmdbConn.close(); } catch (e) { }
+        }
+      }
+    }
+
     const conn = this.createConnection(config);
     try {
-      // 验证连接是否可用
+      // 分别验证原生查询库的连接
       if (config.type === "sqlite") {
         await conn`SELECT 1`;
       } else if (config.type === "mysql") {
@@ -99,6 +148,26 @@ class DatabaseConnector {
   async listTables(id: string): Promise<string[]> {
     const config = this.configs.get(id);
     if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    if (config.type === "dmdb") {
+      let dmdbConn;
+      try {
+        const dmdb = require("dmdb");
+        dmdbConn = await this.getDmdbConnection(config);
+        const targetSchema = config.database.toUpperCase();
+        // 达梦查表，指定 outFormat: dmdb.OUT_FORMAT_OBJECT 可以取属性，或不指定走下标。指定省事
+        const result: any = await withTimeout(dmdbConn.execute(
+          `SELECT table_name FROM all_tables WHERE owner = '${targetSchema}' ORDER BY table_name`,
+          [],
+          { outFormat: dmdb.OUT_FORMAT_OBJECT }
+        ), DMDB_QUERY_TIMEOUT, "达梦查询表列表");
+        return (result.rows || []).map((row: any) => row.TABLE_NAME);
+      } finally {
+        if (dmdbConn) {
+          try { await dmdbConn.close(); } catch (e) { }
+        }
+      }
+    }
 
     const conn = this.createConnection(config);
     try {
@@ -144,6 +213,60 @@ class DatabaseConnector {
   async getTableInfo(id: string, tableName: string): Promise<TableInfo> {
     const config = this.configs.get(id);
     if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    if (config.type === "dmdb") {
+      let dmdbConn;
+      try {
+        const dmdb = require("dmdb");
+        dmdbConn = await this.getDmdbConnection(config);
+        const targetSchema = config.database.toUpperCase();
+        const targetTable = tableName.toUpperCase();
+
+        const tableCommentResult: any = await withTimeout(dmdbConn.execute(
+          `SELECT comments FROM all_tab_comments WHERE owner = '${targetSchema}' AND table_name = '${targetTable}'`,
+          [],
+          { outFormat: dmdb.OUT_FORMAT_OBJECT }
+        ), DMDB_QUERY_TIMEOUT, "达梦查询表注释");
+        let tableComment = tableName;
+        if (tableCommentResult.rows && tableCommentResult.rows.length > 0) {
+          tableComment = cleanString(tableCommentResult.rows[0].COMMENTS || tableName);
+        }
+
+        const columnsResult: any = await withTimeout(dmdbConn.execute(
+          `SELECT 
+             t.column_name, 
+             t.data_type, 
+             t.nullable,
+             t.data_default,
+             t.column_id,
+             c.comments
+           FROM all_tab_columns t
+           LEFT JOIN all_col_comments c 
+             ON t.owner = c.owner AND t.table_name = c.table_name AND t.column_name = c.column_name
+           WHERE t.owner = '${targetSchema}' AND t.table_name = '${targetTable}'
+           ORDER BY t.column_id`,
+          [],
+          { outFormat: dmdb.OUT_FORMAT_OBJECT }
+        ), DMDB_QUERY_TIMEOUT, "达梦查询列信息");
+
+        const columns: TableColumn[] = (columnsResult.rows || []).map((row: any, index: number) => ({
+          name: row.COLUMN_NAME,
+          originalName: row.COLUMN_NAME,
+          dataType: row.DATA_TYPE,
+          comment: cleanString(row.COMMENTS || row.COLUMN_NAME),
+          isNullable: row.NULLABLE === 'Y',
+          defaultValue: row.DATA_DEFAULT,
+          isSelected: true,
+          order: index,
+        }));
+
+        return { name: tableName, comment: tableComment, columns };
+      } finally {
+        if (dmdbConn) {
+          try { await dmdbConn.close(); } catch (e) { }
+        }
+      }
+    }
 
     const conn = this.createConnection(config);
     try {
@@ -271,6 +394,29 @@ class DatabaseConnector {
   async listDatabases(id: string): Promise<string[]> {
     const config = this.configs.get(id);
     if (!config) throw new Error(`未找到 ID 为 ${id} 的数据源`);
+
+    if (config.type === "dmdb") {
+      let dmdbConn;
+      try {
+        const dmdb = require("dmdb");
+        dmdbConn = await this.getDmdbConnection(config);
+        let result: any;
+        try {
+          result = await withTimeout(dmdbConn.execute("SELECT username FROM dba_users ORDER BY username", [], { outFormat: dmdb.OUT_FORMAT_OBJECT }), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
+        } catch (e) {
+          try {
+            result = await withTimeout(dmdbConn.execute("SELECT username FROM all_users ORDER BY username", [], { outFormat: dmdb.OUT_FORMAT_OBJECT }), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
+          } catch (err) {
+            return [config.database.toUpperCase()];
+          }
+        }
+        return (result.rows || []).map((row: any) => row.USERNAME);
+      } finally {
+        if (dmdbConn) {
+          try { await dmdbConn.close(); } catch (e) { }
+        }
+      }
+    }
 
     const conn = this.createConnection(config);
     try {

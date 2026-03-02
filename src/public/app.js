@@ -302,14 +302,34 @@ function showAddDatasourceModal() {
 function onDbTypeChange(type) {
   const serverFields = document.getElementById('serverDbFields');
   const sqliteFields = document.getElementById('sqliteDbFields');
+  const hostInput = document.querySelector('[name="host"]');
+  const portInput = document.querySelector('[name="port"]');
+  const userInput = document.querySelector('[name="user"]');
+  const passwordInput = document.querySelector('[name="password"]');
+
   if (type === 'sqlite') {
     serverFields.classList.add('hidden');
     sqliteFields.classList.remove('hidden');
+    hostInput.value = '';
+    hostInput.disabled = true;
+    portInput.value = '';
+    portInput.disabled = true;
+    userInput.value = '';
+    userInput.disabled = true;
+    passwordInput.value = '';
+    passwordInput.disabled = true;
   } else {
     serverFields.classList.remove('hidden');
     sqliteFields.classList.add('hidden');
-    const portInput = document.querySelector('[name="port"]');
-    portInput.value = type === 'mysql' ? '3306' : '5432';
+    hostInput.disabled = false;
+    portInput.disabled = false;
+    userInput.disabled = false;
+    passwordInput.disabled = false;
+
+    // 设置默认端口
+    if (type === 'mysql') portInput.value = '3306';
+    else if (type === 'postgres') portInput.value = '5432';
+    else if (type === 'dmdb') portInput.value = '5236';
   }
 }
 

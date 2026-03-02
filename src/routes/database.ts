@@ -30,7 +30,7 @@ export const databaseRoutes = new Elysia({ prefix: "/api/database" })
     },
     {
       body: t.Object({
-        type: t.Union([t.Literal("mysql"), t.Literal("postgres"), t.Literal("sqlite")]),
+        type: t.Union([t.Literal("mysql"), t.Literal("postgres"), t.Literal("sqlite"), t.Literal("dmdb")]),
         name: t.String({ minLength: 1 }),
         host: t.Optional(t.String()),
         port: t.Optional(t.Number()),

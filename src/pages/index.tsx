@@ -180,10 +180,11 @@ export const IndexPage = () => (
           </div>
           <div class="form-group">
             <label class="form-label">数据库类型</label>
-            <select class="form-select" name="type" onchange="onDbTypeChange(this.value)">
+            <select class="form-select" name="type" required onchange="onDbTypeChange(this.value)">
               <option value="mysql">MySQL</option>
               <option value="postgres">PostgreSQL</option>
               <option value="sqlite">SQLite</option>
+              <option value="dmdb">达梦8 (DM8)</option>
             </select>
           </div>
           <div id="serverDbFields">
