@@ -54,6 +54,9 @@ export const IndexPage = () => (
             <span class="card-title">选择数据库</span>
             <button class="btn btn-secondary btn-sm" onclick="goToStep(1)">← 返回</button>
           </div>
+          <div style="margin-bottom: 15px;">
+             <input type="text" class="form-input" id="searchDatabaseInput" placeholder="输入关键字搜索数据库..." oninput="filterList('databaseSelectList', this.value)" />
+          </div>
           <div id="databaseSelectList" class="select-list">
             <div class="loading-overlay"><span class="spinner"></span> 加载中...</div>
           </div>
@@ -64,6 +67,9 @@ export const IndexPage = () => (
           <div class="card-header">
             <span class="card-title">选择表</span>
             <button class="btn btn-secondary btn-sm" onclick="goToStep(2)">← 返回</button>
+          </div>
+          <div style="margin-bottom: 15px;">
+             <input type="text" class="form-input" id="searchTableInput" placeholder="输入关键字搜索表..." oninput="filterList('tableSelectList', this.value)" />
           </div>
           <div id="tableSelectList" class="select-list">
             <div class="loading-overlay"><span class="spinner"></span> 加载中...</div>
@@ -283,6 +289,22 @@ export const IndexPage = () => (
             <button type="button" class="btn btn-primary" onclick="saveGroup()">保存</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    {/* ====== 自定义 Confirm 弹窗 ====== */}
+    <div class="modal-overlay hidden" id="customConfirmModal" style="z-index: 10000;">
+      <div class="modal" style="max-width: 400px; padding: 20px;">
+        <div class="modal-header" style="border-bottom: none; padding-bottom: 5px;">
+          <span class="modal-title" style="font-size: 18px;">确认操作</span>
+        </div>
+        <div style="padding: 10px 0 25px 0;" id="customConfirmMessage">
+          确定执行此操作吗？
+        </div>
+        <div class="modal-footer" style="border-top: none; padding-top: 0;">
+          <button type="button" class="btn btn-secondary" id="customConfirmCancelBtn">取消</button>
+          <button type="button" class="btn btn-danger" id="customConfirmOkBtn">确定</button>
+        </div>
       </div>
     </div>
   </Layout>

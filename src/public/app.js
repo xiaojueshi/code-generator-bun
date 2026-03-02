@@ -66,6 +66,49 @@ function hideModal(id) {
   document.getElementById(id).classList.add('hidden');
 }
 
+function customConfirm(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('customConfirmModal');
+    const msgEl = document.getElementById('customConfirmMessage');
+    const cancelBtn = document.getElementById('customConfirmCancelBtn');
+    const okBtn = document.getElementById('customConfirmOkBtn');
+
+    msgEl.textContent = message;
+    modal.classList.remove('hidden');
+
+    const cleanup = () => {
+      cancelBtn.onclick = null;
+      okBtn.onclick = null;
+      modal.classList.add('hidden');
+    };
+
+    cancelBtn.onclick = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    okBtn.onclick = () => {
+      cleanup();
+      resolve(true);
+    };
+  });
+}
+
+function filterList(listId, keyword) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const items = list.querySelectorAll('.select-list-item');
+  const lowerKw = keyword.toLowerCase();
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    if (text.includes(lowerKw)) {
+      item.style.display = '';
+    } else {
+      item.style.display = 'none';
+    }
+  });
+}
+
 function escapeHTML(str) {
   if (!str) return '';
   const s = String(str);
@@ -170,7 +213,8 @@ async function saveGroup() {
 }
 
 async function deleteGroup(id) {
-  if (!confirm('确定删除该分组？分组内的模板将变为未分组。')) return;
+  const confirmed = await customConfirm('确定删除该分组？分组内的模板将变为未分组。');
+  if (!confirmed) return;
   try {
     const res = await API.del(`/api/template/group/${id}`);
     if (res.success) {
@@ -307,7 +351,8 @@ async function addDatasource() {
 }
 
 async function deleteDatasource(id) {
-  if (!confirm('确定删除该数据源？')) return;
+  const confirmed = await customConfirm('确定删除该数据源？');
+  if (!confirmed) return;
   try {
     const res = await API.del(`/api/database/disconnect/${id}`);
     if (res.success) {
@@ -424,7 +469,8 @@ async function saveTemplate() {
 }
 
 async function deleteTemplate(id) {
-  if (!confirm('确定删除该模板？')) return;
+  const confirmed = await customConfirm('确定删除该模板？');
+  if (!confirmed) return;
   try {
     const res = await API.del(`/api/template/${id}`);
     if (res.success) {
@@ -439,7 +485,8 @@ async function deleteTemplate(id) {
 }
 
 async function resetTemplates() {
-  if (!confirm('确定重置为默认模板？现有所有模板和分组将被覆盖！')) return;
+  const confirmed = await customConfirm('确定重置为默认模板？现有所有模板和分组将被覆盖！');
+  if (!confirmed) return;
   try {
     const res = await API.post('/api/template/reset');
     if (res.success) {
@@ -513,6 +560,9 @@ function selectDatasource(id) {
 
 async function loadDatabases() {
   const container = document.getElementById('databaseSelectList');
+  const searchInput = document.getElementById('searchDatabaseInput');
+  if (searchInput) searchInput.value = '';
+
   container.innerHTML = '<div class="loading-overlay"><span class="spinner"></span> 加载数据库列表...</div>';
 
   try {
@@ -541,6 +591,9 @@ async function selectDatabase(dbName) {
 
 async function loadTables() {
   const container = document.getElementById('tableSelectList');
+  const searchInput = document.getElementById('searchTableInput');
+  if (searchInput) searchInput.value = '';
+
   container.innerHTML = '<div class="loading-overlay"><span class="spinner"></span> 加载表列表...</div>';
 
   try {
@@ -776,8 +829,8 @@ async function downloadCode() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // 延迟释放 ObjectURL，确保浏览器有足够时间完成下载
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    // 延迟释放 ObjectURL，延长至 60 秒确保浏览器在此期间文件存活，解决 Chrome 下载选择对话框超时中断的问题
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
     showToast('代码已下载', 'success');
   } catch (e) {
     showToast('下载失败: ' + e.message, 'error');
