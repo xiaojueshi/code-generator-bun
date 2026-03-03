@@ -1,6 +1,5 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { staticPlugin } from "@elysiajs/static";
 import { html } from "@elysiajs/html";
 
 import { databaseRoutes } from "./routes/database";
@@ -10,6 +9,10 @@ import { localDatabase } from "./database/local";
 import { databaseConnector } from "./database/connector";
 import { initDefaultTemplates } from "./utils/template";
 import { IndexPage } from "./pages/index";
+
+// 静态文件导入以供二进制打包
+import appJs from "./public/app.js" with { type: "text" };
+import styleCss from "./public/style.css" with { type: "text" };
 
 // 初始化
 const init = async () => {
@@ -34,12 +37,11 @@ const app = new Elysia()
     exposeHeaders: ["Content-Length", "Content-Disposition"],
   }))
   .use(html())
-  .use(staticPlugin({
-    prefix: "/public",
-    assets: "src/public",
-  }))
   // 页面路由
   .get("/", () => IndexPage())
+  // 内存路由，用于静态打包
+  .get("/public/app.js", () => new Response(appJs, { headers: { "Content-Type": "application/javascript; charset=utf-8" } }))
+  .get("/public/style.css", () => new Response(styleCss, { headers: { "Content-Type": "text/css; charset=utf-8" } }))
   // API 路由
   .use(databaseRoutes)
   .use(generatorRoutes)

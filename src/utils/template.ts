@@ -5,6 +5,12 @@ import { cleanString } from "./stringUtils";
 import fs from "fs";
 import path from "path";
 import JSZip from "jszip";
+import indexHbs from "../templates/index.hbs" with { type: "text" };
+import requestHbs from "../templates/request.hbs" with { type: "text" };
+import apiHbs from "../templates/api.hbs" with { type: "text" };
+import constantsHbs from "../templates/constants.hbs" with { type: "text" };
+import typeHbs from "../templates/type.hbs" with { type: "text" };
+import useListStateHbs from "../templates/useListState.hbs" with { type: "text" };
 
 // 注册 raw 助手，用于跳过模板处理
 Handlebars.registerHelper("raw", function (options: any) {
@@ -46,25 +52,21 @@ export const initDefaultTemplates = async (force = false): Promise<void> => {
   }
 
   // 默认模板配置
-  const DEFAULT_TEMPLATES: Record<string, string> = {
-    index: "index.vue",
-    request: "request.ts",
-    api: "api.ts",
-    constants: "constants.ts",
-    type: "type.ts",
-    useListState: "useListState.ts",
+  const DEFAULT_TEMPLATES: Record<string, { filename: string; content: string }> = {
+    index: { filename: "index.vue", content: indexHbs },
+    request: { filename: "request.ts", content: requestHbs },
+    api: { filename: "api.ts", content: apiHbs },
+    constants: { filename: "constants.ts", content: constantsHbs },
+    type: { filename: "type.ts", content: typeHbs },
+    useListState: { filename: "useListState.ts", content: useListStateHbs },
   };
 
-  const templatesDir = path.join(process.cwd(), "src", "templates");
-
-  for (const [name, filename] of Object.entries(DEFAULT_TEMPLATES)) {
-    const filePath = path.join(templatesDir, `${name}.hbs`);
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, "utf-8");
-      await localDatabase.saveTemplate({ name, filename, content, groupId: defaultGroupId });
-      console.log(`已加载默认模板: ${name} -> ${filename} (分组: 默认)`);
+  for (const [name, info] of Object.entries(DEFAULT_TEMPLATES)) {
+    if (info.content) {
+      await localDatabase.saveTemplate({ name, filename: info.filename, content: info.content, groupId: defaultGroupId });
+      console.log(`已加载默认模板: ${name} -> ${info.filename} (分组: 默认)`);
     } else {
-      console.warn(`默认模板文件不存在: ${filePath}`);
+      console.warn(`默认模板文件缺少内容: ${name}`);
     }
   }
 };

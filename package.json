@@ -3,7 +3,12 @@
   "version": "1.0.50",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "build:win": "bun build ./src/index.ts --compile --target=bun-windows-x64 --outfile=dist/code_generator-windows-x64.exe",
+    "build:linux": "bun build ./src/index.ts --compile --target=bun-linux-x64 --outfile=dist/code_generator-linux-x64",
+    "build:mac": "bun build ./src/index.ts --compile --target=bun-darwin-arm64 --outfile=dist/code_generator-darwin-arm64",
+    "build:mac-x64": "bun build ./src/index.ts --compile --target=bun-darwin-x64 --outfile=dist/code_generator-darwin-x64",
+    "build": "bun run build:win && bun run build:linux && bun run build:mac && bun run build:mac-x64"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",
