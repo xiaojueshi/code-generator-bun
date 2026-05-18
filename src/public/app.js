@@ -578,6 +578,22 @@ function selectDatasource(id) {
   goToStep(2);
 }
 
+function decodeSelectionValue(encodedValue) {
+  try {
+    return decodeURIComponent(encodedValue);
+  } catch {
+    return encodedValue;
+  }
+}
+
+function selectDatabaseByEncoded(encodedDbName) {
+  return selectDatabase(decodeSelectionValue(encodedDbName));
+}
+
+function selectTableByEncoded(encodedTableName) {
+  return selectTable(decodeSelectionValue(encodedTableName));
+}
+
 async function loadDatabases() {
   const container = document.getElementById('databaseSelectList');
   const searchInput = document.getElementById('searchDatabaseInput');
@@ -592,9 +608,12 @@ async function loadDatabases() {
       return;
     }
 
-    container.innerHTML = res.data.map(db => `
-      <div class="select-list-item" onclick="selectDatabase('${escapeHTML(db)}')">${escapeHTML(db)}</div>
-    `).join('');
+    container.innerHTML = res.data.map(db => {
+      const encodedDb = encodeURIComponent(db).replace(/'/g, '%27');
+      return `
+      <div class="select-list-item" onclick='selectDatabaseByEncoded("${encodedDb}")'>${escapeHTML(db)}</div>
+    `;
+    }).join('');
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><p>加载失败: ${escapeHTML(e.message)}</p></div>`;
   }
@@ -623,9 +642,12 @@ async function loadTables() {
       return;
     }
 
-    container.innerHTML = res.data.map(table => `
-      <div class="select-list-item" onclick="selectTable('${escapeHTML(table)}')">${escapeHTML(table)}</div>
-    `).join('');
+    container.innerHTML = res.data.map(table => {
+      const encodedTable = encodeURIComponent(table).replace(/'/g, '%27');
+      return `
+      <div class="select-list-item" onclick='selectTableByEncoded("${encodedTable}")'>${escapeHTML(table)}</div>
+    `;
+    }).join('');
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><p>加载失败: ${escapeHTML(e.message)}</p></div>`;
   }
@@ -634,7 +656,8 @@ async function loadTables() {
 async function selectTable(tableName) {
   state.selectedTable = tableName;
   try {
-    const res = await API.get(`/api/database/${state.selectedDatasourceId}/tables/${tableName}`);
+    const encodedTableName = encodeURIComponent(tableName);
+    const res = await API.get(`/api/database/${state.selectedDatasourceId}/tables/${encodedTableName}`);
     if (res.success) {
       state.tableInfo = res.data;
       renderFieldsTable();

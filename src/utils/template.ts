@@ -2,8 +2,6 @@ import Handlebars from "handlebars";
 import type { TableInfo, TemplateInfo } from "../types";
 import { localDatabase } from "../database/local";
 import { cleanString } from "./stringUtils";
-import fs from "fs";
-import path from "path";
 import JSZip from "jszip";
 import indexHbs from "../templates/index.hbs" with { type: "text" };
 import requestHbs from "../templates/request.hbs" with { type: "text" };

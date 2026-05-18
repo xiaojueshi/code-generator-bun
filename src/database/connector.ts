@@ -37,6 +37,7 @@ class DatabaseConnector {
       password: config.password,
       connectString: `${config.host || "localhost"}:${config.port || 5236}`,
       loginEncrypt: false,
+      maxRows: 0,
     });
     return withTimeout(connPromise, DMDB_CONNECT_TIMEOUT, "达梦数据库连接");
   }
@@ -220,36 +221,51 @@ class DatabaseConnector {
         const dmdb = require("dmdb");
         dmdbConn = await this.getDmdbConnection(config);
         const targetSchema = config.database.toUpperCase();
-        const targetTable = tableName.toUpperCase();
 
-        const tableCommentResult: any = await withTimeout(dmdbConn.execute(
-          `SELECT comments FROM all_tab_comments WHERE owner = '${targetSchema}' AND table_name = '${targetTable}'`,
+        const escapedSchema = targetSchema.replace(/'/g, "''");
+        const candidates = Array.from(new Set([tableName, tableName.toUpperCase()]));
+
+        let matchedName = candidates[0];
+        let tableComment = tableName;
+        let columnRows: any[] = [];
+
+        for (const candidate of candidates) {
+          const escapedName = candidate.replace(/'/g, "''");
+          const result: any = await withTimeout(dmdbConn.execute(
+            `SELECT 
+               t.column_name, 
+               t.data_type, 
+               t.nullable,
+               t.data_default,
+               t.column_id,
+               c.comments
+             FROM all_tab_columns t
+             LEFT JOIN all_col_comments c 
+               ON t.owner = c.owner AND t.table_name = c.table_name AND t.column_name = c.column_name
+             WHERE t.owner = '${escapedSchema}' AND t.table_name = '${escapedName}'
+             ORDER BY t.column_id`,
+            [],
+            { outFormat: dmdb.OUT_FORMAT_OBJECT }
+          ), DMDB_QUERY_TIMEOUT, "达梦查询列信息");
+
+          if (result.rows && result.rows.length > 0) {
+            columnRows = result.rows;
+            matchedName = candidate;
+            break;
+          }
+        }
+
+        const escapedMatched = matchedName.replace(/'/g, "''");
+        const commentResult: any = await withTimeout(dmdbConn.execute(
+          `SELECT comments FROM all_tab_comments WHERE owner = '${escapedSchema}' AND table_name = '${escapedMatched}'`,
           [],
           { outFormat: dmdb.OUT_FORMAT_OBJECT }
         ), DMDB_QUERY_TIMEOUT, "达梦查询表注释");
-        let tableComment = tableName;
-        if (tableCommentResult.rows && tableCommentResult.rows.length > 0) {
-          tableComment = cleanString(tableCommentResult.rows[0].COMMENTS || tableName);
+        if (commentResult.rows && commentResult.rows.length > 0) {
+          tableComment = cleanString(commentResult.rows[0].COMMENTS || tableName);
         }
 
-        const columnsResult: any = await withTimeout(dmdbConn.execute(
-          `SELECT 
-             t.column_name, 
-             t.data_type, 
-             t.nullable,
-             t.data_default,
-             t.column_id,
-             c.comments
-           FROM all_tab_columns t
-           LEFT JOIN all_col_comments c 
-             ON t.owner = c.owner AND t.table_name = c.table_name AND t.column_name = c.column_name
-           WHERE t.owner = '${targetSchema}' AND t.table_name = '${targetTable}'
-           ORDER BY t.column_id`,
-          [],
-          { outFormat: dmdb.OUT_FORMAT_OBJECT }
-        ), DMDB_QUERY_TIMEOUT, "达梦查询列信息");
-
-        const columns: TableColumn[] = (columnsResult.rows || []).map((row: any, index: number) => ({
+        const columns: TableColumn[] = columnRows.map((row: any, index: number) => ({
           name: row.COLUMN_NAME,
           originalName: row.COLUMN_NAME,
           dataType: row.DATA_TYPE,
@@ -355,7 +371,8 @@ class DatabaseConnector {
         case "sqlite": {
           tableComment = cleanString(tableName);
 
-          const rows = await conn.unsafe(`PRAGMA table_info(${tableName})`);
+          const escapedTableName = tableName.replace(/"/g, '""');
+          const rows = await conn.unsafe(`PRAGMA table_info("${escapedTableName}")`);
 
           columns = rows.map((row: any, index: number) => ({
             name: row.name,
@@ -400,17 +417,63 @@ class DatabaseConnector {
       try {
         const dmdb = require("dmdb");
         dmdbConn = await this.getDmdbConnection(config);
-        let result: any;
+        const seen = new Set<string>();
+        const schemas: string[] = [];
+        let anySucceeded = false;
+
+        // 从 dba_objects 获取所有拥有任意对象的 owner（覆盖纯 schema）
         try {
-          result = await withTimeout(dmdbConn.execute("SELECT username FROM dba_users ORDER BY username", [], { outFormat: dmdb.OUT_FORMAT_OBJECT }), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
+          const r = await withTimeout(dmdbConn.execute(
+            "SELECT DISTINCT owner FROM dba_objects ORDER BY owner",
+            [],
+            { outFormat: dmdb.OUT_FORMAT_OBJECT }
+          ), DMDB_QUERY_TIMEOUT, "达梦查询对象所属模式列表");
+          for (const row of (r.rows || [])) {
+            const name = row.OWNER;
+            if (name && !seen.has(name)) {
+              seen.add(name);
+              schemas.push(name);
+            }
+          }
+          anySucceeded = true;
+        } catch (e) { /* 可能无权限，继续尝试 dba_users */ }
+
+        // 从 dba_users 补充用户级 schema（覆盖有用户但无表的 schema）
+        try {
+          const r = await withTimeout(dmdbConn.execute(
+            "SELECT username FROM dba_users ORDER BY username",
+            [],
+            { outFormat: dmdb.OUT_FORMAT_OBJECT }
+          ), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
+          for (const row of (r.rows || [])) {
+            const name = row.USERNAME;
+            if (name && !seen.has(name)) {
+              seen.add(name);
+              schemas.push(name);
+            }
+          }
+          anySucceeded = true;
         } catch (e) {
           try {
-            result = await withTimeout(dmdbConn.execute("SELECT username FROM all_users ORDER BY username", [], { outFormat: dmdb.OUT_FORMAT_OBJECT }), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
-          } catch (err) {
-            return [config.database.toUpperCase()];
-          }
+            const r = await withTimeout(dmdbConn.execute(
+              "SELECT username FROM all_users ORDER BY username",
+              [],
+              { outFormat: dmdb.OUT_FORMAT_OBJECT }
+            ), DMDB_QUERY_TIMEOUT, "达梦查询用户列表");
+            for (const row of (r.rows || [])) {
+              const name = row.USERNAME;
+              if (name && !seen.has(name)) {
+                seen.add(name);
+                schemas.push(name);
+              }
+            }
+            anySucceeded = true;
+          } catch (e2) { /* 都失败 */ }
         }
-        return (result.rows || []).map((row: any) => row.USERNAME);
+
+        if (!anySucceeded) return [config.database.toUpperCase()];
+        schemas.sort();
+        return schemas;
       } finally {
         if (dmdbConn) {
           try { await dmdbConn.close(); } catch (e) { }
