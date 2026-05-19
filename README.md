@@ -1,6 +1,11 @@
 # 代码生成器
 
-基于 **Bun + ElysiaJS** 的 Web 代码生成工具。通过逆向工程连接现有数据库，读取表结构，使用 Handlebars 模板自动生成 Vue 3 + TDesign CRUD 代码。
+基于 **Bun + ElysiaJS** 的代码生成工具，同时提供 **Web 界面** 和 **CLI 命令行** 两种模式。
+
+- **Web 模式**：通过浏览器可视化操作，管理数据源和模板，生成代码并下载 ZIP
+- **CLI 模式**：供 AI Agent（如 opencode、Claude Code）调用，读取表结构，生成代码文件到磁盘
+
+核心能力：逆向工程连接现有数据库，读取表结构，使用 Handlebars 模板自动生成 Vue 3 + TDesign CRUD 代码。
 
 ## 功能特性
 
@@ -65,7 +70,7 @@ open http://localhost:3000
 
 ## 构建部署
 
-Bun 支持将整个应用编译为单文件原生二进制，无需 Node.js 运行时。
+Bun 支持将整个应用编译为单文件原生二进制，无需 Node.js 运行时。编译后的二进制同时包含 Web 服务和 CLI 两种模式。
 
 ```bash
 # 构建所有平台
@@ -78,7 +83,18 @@ bun run build:mac       # macOS ARM64 (Apple Silicon)
 bun run build:mac-x64   # macOS x64 (Intel)
 ```
 
-编译产物输出到 `dist/` 目录，完全自包含（静态资源和模板均嵌入二进制）。
+编译产物输出到 `dist/` 目录，完全自包含（静态资源、模板、CLI 逻辑均嵌入二进制）。
+
+### 运行模式
+
+```bash
+# Web 模式（无参数启动）
+./dist/code_generator-darwin-arm64        # 启动 Web 服务，监听 3000 端口
+
+# CLI 模式（带子命令）
+./dist/code_generator-darwin-arm64 list datasources
+./dist/code_generator-darwin-arm64 generate 生产库 sys_user -o ./output/
+```
 
 ## 使用指南
 
@@ -99,6 +115,53 @@ bun run build:mac-x64   # macOS x64 (Intel)
 - 模板使用 Handlebars 语法，变量上下文见「模板变量」章节
 - 支持 `{{#raw}}...{{/raw}}` 标签避免 Vue 双花括号语法冲突
 - 点击「重置为默认」恢复出厂模板
+
+## CLI 模式
+
+编译后的二进制文件根据启动参数自动切换模式——无参数启动 Web 服务，有子命令时进入 CLI 模式。
+
+### 命令参考
+
+```
+code-generator <命令> [选项]
+```
+
+| 命令 | 功能 |
+|------|------|
+| `list datasources` | 列出所有已配置的数据源 |
+| `list templates` | 列出所有模板（按分组展示） |
+| `list tables <数据源>` | 列出数据源下的所有表 |
+| `table info <数据源> <表>` | 获取表结构（JSON 输出） |
+| `generate <数据源> <表>` | 生成代码文件到磁盘 |
+
+### 生成代码
+
+```bash
+# 基本用法
+code-generator generate 生产库 sys_user
+
+# 指定模板分组和输出目录
+code-generator generate 生产库 sys_user \
+  --template-group "Vue3 管理端" \
+  --output ./my-module/
+
+# 指定单个模板 + 只生成部分列
+code-generator generate 生产库 sys_user \
+  --template type \
+  --columns id,username,email \
+  -o ./types/
+```
+
+| 生成选项 | 说明 |
+|----------|------|
+| `--template-group <名称>` | 按模板组名筛选 |
+| `--template <名称>` | 按模板名称筛选单个 |
+| `--columns <列1,列2,...>` | 只生成指定列 |
+| `--output <目录>`, `-o <目录>` | 输出目录（默认 `./<表名>-code/`） |
+
+### Agent 集成
+
+Agent 可直接调用上述 CLI 命令完成代码生成工作流：确认数据源 → 确认模板 → 生成代码 → 读取分析 → 业务调整 → 写入项目。
 
 ## 数据库支持
 
@@ -151,7 +214,12 @@ bun run build:mac-x64   # macOS x64 (Intel)
 ```
 code_generator_bun/
 ├── src/
-│   ├── index.ts                 # 入口：初始化、路由注册、启动服务
+│   ├── index.ts                 # 入口：CLI 检测 + 初始化 + 路由注册 + 启动服务
+│   ├── cli/                     # CLI 命令行模块
+│   │   ├── index.ts             #   命令分发器
+│   │   ├── list.ts              #   list 子命令
+│   │   ├── table.ts             #   table info 子命令
+│   │   └── generate.ts          #   generate 子命令
 │   ├── types/index.ts           # 共享 TypeScript 类型
 │   ├── database/
 │   │   ├── local.ts             # 本地 SQLite 持久化（连接配置、模板）
@@ -164,25 +232,22 @@ code_generator_bun/
 │   │   ├── layout.tsx           # HTML 布局（页眉、导航标签）
 │   │   └── index.tsx            # 完整 SPA 页面（所有标签页、弹窗）
 │   ├── public/
-│   │   ├── app.js               # 前端交互逻辑（889 行）
-│   │   └── style.css            # 深色玻璃态主题（864 行）
-│   ├── templates/               # 默认 Handlebars 模板
-│   │   ├── index.hbs
-│   │   ├── request.hbs
-│   │   ├── api.hbs
-│   │   ├── constants.hbs
-│   │   ├── type.hbs
-│   │   └── useListState.hbs
+│   │   ├── app.js               # 前端交互逻辑
+│   │   └── style.css            # 深色玻璃态主题
+│   ├── templates/               # 默认 Handlebars 模板（6 个 .hbs 文件）
 │   └── utils/
 │       ├── stringUtils.ts       # 字符串清理工具
 │       └── template.ts          # Handlebars 编译与代码生成
 ├── data.sqlite                  # 运行时数据库（已 gitignore）
 ├── dist/                        # 编译产物（已 gitignore）
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+└── docs/superpowers/specs/      # 设计文档
 ```
 
 ## 架构概览
+
+### Web 模式
 
 ```
 浏览器                    Bun + Elysia 服务器
@@ -194,6 +259,21 @@ code_generator_bun/
   │  POST /api/generator/preview │  Handlebars 渲染 → JSON
   │  POST /api/generator/generate│  Handlebars 渲染 → ZIP
   │  CRUD /api/template/*        │  模板和分组管理
+```
+
+### CLI 模式
+
+```
+AI Agent ──→ code-generator generate <ds> <table> ──→ data.sqlite（查找连接配置）
+                                                          │
+                                                          ↓
+                                                    远程数据库（获取表结构）
+                                                          │
+                                                          ↓
+                                                    Handlebars 渲染
+                                                          │
+                                                          ↓
+                                                    写入磁盘文件 ←── Agent 读取 → 业务调整 → 写入项目
 ```
 
 ## 开发

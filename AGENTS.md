@@ -2,12 +2,12 @@
 
 ## Commands
 
-| Action | Command |
-|--------|---------|
-| Install | `bun install` |
-| Dev server (hot reload) | `bun run dev` (expands to `bun run --watch src/index.ts`) |
-| Build all platforms | `bun run build` |
-| Build single platform | `bun run build:win` / `build:linux` / `bun run build:mac` / `bun run build:mac-x64` |
+| Action                  | Command                                                                             |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Install                 | `bun install`                                                                       |
+| Dev server (hot reload) | `bun run dev` (expands to `bun run --watch src/index.ts`)                           |
+| Build all platforms     | `bun run build`                                                                     |
+| Build single platform   | `bun run build:win` / `build:linux` / `bun run build:mac` / `bun run build:mac-x64` |
 
 No test runner, linter, formatter, typechecker, or CI is configured. `bun run test` is a placeholder. The only verification is `bun run dev` (hot-reload server).
 
@@ -21,22 +21,39 @@ No test runner, linter, formatter, typechecker, or CI is configured. `bun run te
 
 ## Key Files
 
-| Path | Purpose |
-|------|---------|
-| `src/index.ts` | Entry point. Initializes local DB, loads saved connections, seeds default templates, registers routes, listens on port 3000 |
-| `src/database/local.ts` | SQLite persistence (connections, template_groups, templates tables) |
+| Path                        | Purpose                                                                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`              | Entry point. Initializes local DB, loads saved connections, seeds default templates, registers routes, listens on port 3000                                               |
+| `src/database/local.ts`     | SQLite persistence (connections, template_groups, templates tables)                                                                                                       |
 | `src/database/connector.ts` | Remote DB manager. **Short-connection pattern**: creates connection per operation, closes immediately after. Handles MySQL/PostgreSQL/SQLite via Bun SQL, DMDB via `dmdb` |
-| `src/routes/database.ts` | `/api/database/*` — data source CRUD |
-| `src/routes/generator.ts` | `/api/generator/*` — preview and ZIP generation |
-| `src/routes/template.ts` | `/api/template/*` — template and group management |
-| `src/utils/template.ts` | Handlebars compilation, default template seeding |
-| `src/utils/stringUtils.ts` | String cleaning utilities |
-| `src/pages/layout.tsx` | Shared HTML layout (head, nav tabs, toast container) |
-| `src/pages/index.tsx` | Full SPA page (all tabs, modals) via TSX |
-| `src/public/app.js` | Frontend interaction logic |
-| `src/public/style.css` | Dark glassmorphism theme |
-| `src/templates/*.hbs` | Default Handlebars templates (6 files) |
-| `src/assets.d.ts` | Type declarations for `.hbs`, `.css`, `.js` text imports |
+| `src/routes/database.ts`    | `/api/database/*` — data source CRUD                                                                                                                                      |
+| `src/routes/generator.ts`   | `/api/generator/*` — preview and ZIP generation                                                                                                                           |
+| `src/routes/template.ts`    | `/api/template/*` — template and group management                                                                                                                         |
+| `src/utils/template.ts`     | Handlebars compilation, default template seeding                                                                                                                          |
+| `src/utils/stringUtils.ts`  | String cleaning utilities                                                                                                                                                 |
+| `src/pages/layout.tsx`      | Shared HTML layout (head, nav tabs, toast container)                                                                                                                      |
+| `src/pages/index.tsx`       | Full SPA page (all tabs, modals) via TSX                                                                                                                                  |
+| `src/public/app.js`         | Frontend interaction logic                                                                                                                                                |
+| `src/public/style.css`      | Dark glassmorphism theme                                                                                                                                                  |
+| `src/templates/*.hbs`       | Default Handlebars templates (6 files)                                                                                                                                    |
+| `src/assets.d.ts`           | Type declarations for `.hbs`, `.css`, `.js` text imports                                                                                                                  |
+
+## CLI Mode
+
+The binary auto-detects CLI mode. When run with no arguments or `serve`, it starts the web server. When run with a CLI command, it executes and exits.
+
+| Command                                          | Description                              |
+| ------------------------------------------------ | ---------------------------------------- |
+| `code-generator list datasources`                | List all configured data sources by name |
+| `code-generator list templates`                  | List all templates grouped by group name |
+| `code-generator table info <ds> <table>`         | Get table structure as JSON              |
+| `code-generator generate <ds> <table> [options]` | Generate code files to disk              |
+
+Generate options: `--template-group`, `--template`, `--columns`, `--output` (or `-o`).
+
+**CLI entry point**: The detection happens at the top of `src/index.ts:1-11`. CLI commands are in `src/cli/*.ts`. They reuse `databaseConnector`, `generateFiles`, `renderTemplate` from the web app. The CLI-init DB/templates/connections before executing.
+
+**DS lookup**: CLI looks up data sources by `name` (from Web UI configuration) in `data.sqlite`.
 
 ## Important Notes
 

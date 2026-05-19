@@ -1,3 +1,13 @@
+// CLI 检测 —— 当有子命令参数时进入 CLI 模式
+const cliCommands = new Set(["list", "table", "generate", "-h", "--help"]);
+const shouldRunCli = Bun.argv.length > 2 && cliCommands.has(Bun.argv[2]);
+
+if (shouldRunCli) {
+  const { runCli } = await import("./cli/index");
+  await runCli(Bun.argv.slice(2));
+  process.exit(0);
+}
+
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { html } from "@elysiajs/html";
