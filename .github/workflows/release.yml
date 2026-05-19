@@ -24,8 +24,11 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Configure public registry and install dependencies
+        run: |
+          echo '[install]
+          registry = "https://registry.npmjs.org/"' > .bunfig.toml
+          bun install
 
       - name: Build all platforms
         run: bun run build

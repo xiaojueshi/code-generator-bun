@@ -44,6 +44,9 @@ package-lock.json
 # build output
 /dist/
 
+# bun config (CI override, not for local)
+/.bunfig.toml
+
 # runtime data
 /data.sqlite
 /data/
